@@ -1,94 +1,69 @@
-import { Tabs } from "expo-router";
-import { Heart, MessageCircle, User, Crown } from "lucide-react-native";
-import { useTheme } from "../../utils/theme";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useAuth } from "@/utils/auth/useAuth";
+import { Stack } from "expo-router";
+import * as SplashScreen from "expo-splash-screen";
+import { useEffect } from "react";
+import { GestureHandlerRootView } from "react-native-gesture-handler";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import admobService from "../utils/admob/AdMobService";
 
-export default function TabLayout() {
-  const { colors } = useTheme();
-  const insets = useSafeAreaInsets();
+SplashScreen.preventAutoHideAsync();
+
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      staleTime: 1000 * 60 * 5, // 5 minutes
+      cacheTime: 1000 * 60 * 30, // 30 minutes
+      retry: 1,
+      refetchOnWindowFocus: false,
+    },
+  },
+});
+
+export default function RootLayout() {
+  const { initiate, isReady } = useAuth();
+
+  useEffect(() => {
+    initiate();
+  }, [initiate]);
+
+  // Initialize AdMob when app starts
+  useEffect(() => {
+    const initializeAdMob = async () => {
+      try {
+        console.log("🚀 Starting AdMob initialization...");
+        const success = await admobService.initialize();
+
+        if (success) {
+          console.log("✅ AdMob initialization successful");
+          console.log("📋 AdMob Config:", admobService.getConfig());
+        } else {
+          console.log("⚠️ AdMob initialization failed");
+        }
+      } catch (error) {
+        console.error("❌ AdMob initialization error:", error);
+      }
+    };
+
+    initializeAdMob();
+  }, []);
+
+  useEffect(() => {
+    if (isReady) {
+      SplashScreen.hideAsync();
+    }
+  }, [isReady]);
+
+  if (!isReady) {
+    return null;
+  }
 
   return (
-    <Tabs
-      screenOptions={{
-        headerShown: false,
-        tabBarStyle: {
-          backgroundColor: colors.surface,
-          borderTopWidth: 1,
-          borderTopColor: colors.border,
-          paddingBottom: insets.bottom + 8,
-          paddingTop: 12,
-          paddingHorizontal: 8,
-          height: insets.bottom + 64,
-        },
-        tabBarActiveTintColor: colors.primary,
-        tabBarInactiveTintColor: colors.textTertiary,
-        tabBarLabelStyle: {
-          fontSize: 10,
-          fontWeight: "600",
-          marginTop: 4,
-        },
-        tabBarItemStyle: {
-          paddingVertical: 8,
-          flex: 1,
-        },
-      }}
-    >
-      <Tabs.Screen
-        name="discover"
-        options={{
-          title: "Discover",
-          tabBarIcon: ({ color, focused }) => (
-            <Heart
-              color={color}
-              size={24}
-              fill={focused ? color : "transparent"}
-              strokeWidth={2}
-            />
-          ),
-        }}
-      />
-      <Tabs.Screen
-        name="matches"
-        options={{
-          title: "Matches",
-          tabBarIcon: ({ color, focused }) => (
-            <MessageCircle
-              color={color}
-              size={24}
-              fill={focused ? color : "transparent"}
-              strokeWidth={2}
-            />
-          ),
-        }}
-      />
-      <Tabs.Screen
-        name="premium"
-        options={{
-          title: "Premium",
-          tabBarIcon: ({ color, focused }) => (
-            <Crown
-              color={color}
-              size={24}
-              fill={focused ? color : "transparent"}
-              strokeWidth={2}
-            />
-          ),
-        }}
-      />
-      <Tabs.Screen
-        name="profile"
-        options={{
-          title: "Profile",
-          tabBarIcon: ({ color, focused }) => (
-            <User
-              color={color}
-              size={24}
-              fill={focused ? color : "transparent"}
-              strokeWidth={2}
-            />
-          ),
-        }}
-      />
-    </Tabs>
+    <QueryClientProvider client={queryClient}>
+      <GestureHandlerRootView style={{ flex: 1 }}>
+        <Stack screenOptions={{ headerShown: false }} initialRouteName="index">
+          <Stack.Screen name="index" />
+        </Stack>
+      </GestureHandlerRootView>
+    </QueryClientProvider>
   );
 }
