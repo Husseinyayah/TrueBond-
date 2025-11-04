@@ -2,82 +2,81 @@ import sql from "@/app/api/utils/sql";
 
 export async function POST(request) {
   try {
-    const { fromUid, toUid, likeType } = await request.json();
+    const {
+      uid,
+      traits,
+      values,
+      datingGoals,
+      conversationStyle,
+      dealBreakers,
+    } = await request.json();
 
     // Validate required fields
-    if (!fromUid || !toUid) {
+    if (!uid || !datingGoals) {
       return Response.json(
         {
-          error: "From UID and To UID are required",
+          error: "UID and dating goals are required",
         },
         { status: 400 },
       );
     }
 
-    // Check if already liked
-    const existingLike = await sql`
-      SELECT * FROM likes WHERE from_uid = ${fromUid} AND to_uid = ${toUid}
+    // Create compatibility score vectors based on answers
+    const scoreVectors = {
+      extroversion: traits?.extroversion || 0.5,
+      openness: traits?.openness || 0.5,
+      conscientiousness: traits?.conscientiousness || 0.5,
+      agreeableness: traits?.agreeableness || 0.5,
+      emotionalStability: traits?.emotionalStability || 0.5,
+      familyOriented: values?.familyOriented || 0.5,
+      careerFocused: values?.careerFocused || 0.5,
+      adventurous: values?.adventurous || 0.5,
+      spiritual: values?.spiritual || 0.5,
+    };
+
+    // Save or update quiz results
+    const existingQuiz = await sql`
+      SELECT uid FROM quiz_results WHERE uid = ${uid}
     `;
 
-    if (existingLike.length > 0) {
-      return Response.json(
-        { error: "Already liked this profile" },
-        { status: 409 },
-      );
-    }
-
-    // Record the like
-    const newLike = await sql`
-      INSERT INTO likes (from_uid, to_uid, like_type, created_at)
-      VALUES (${fromUid}, ${toUid}, ${likeType || "like"}, NOW())
-      RETURNING *
-    `;
-
-    // Check if it's a mutual like (match)
-    const mutualLike = await sql`
-      SELECT * FROM likes 
-      WHERE from_uid = ${toUid} AND to_uid = ${fromUid} 
-      AND like_type IN ('like', 'super')
-    `;
-
-    let match = null;
-    if (mutualLike.length > 0) {
-      // Create match
-      const matchId = `match_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-
-      const newMatch = await sql`
-        INSERT INTO matches (match_id, uid1, uid2, created_at, status)
-        VALUES (${matchId}, ${fromUid}, ${toUid}, NOW(), 'active')
+    let quizResult;
+    if (existingQuiz.length > 0) {
+      // Update existing
+      quizResult = await sql`
+        UPDATE quiz_results 
+        SET 
+          traits = ${JSON.stringify(traits || {})},
+          values = ${JSON.stringify(values || {})},
+          score_vectors = ${JSON.stringify(scoreVectors)},
+          dating_goals = ${datingGoals},
+          conversation_style = ${conversationStyle || null},
+          deal_breakers = ${JSON.stringify(dealBreakers || [])},
+          updated_at = NOW()
+        WHERE uid = ${uid}
         RETURNING *
       `;
-
-      // Create chat for the match
-      await sql`
-        INSERT INTO chats (match_id, unread_counts, created_at, updated_at)
-        VALUES (${matchId}, '{}', NOW(), NOW())
+    } else {
+      // Create new
+      quizResult = await sql`
+        INSERT INTO quiz_results (
+          uid, traits, values, score_vectors, dating_goals, 
+          conversation_style, deal_breakers, created_at, updated_at
+        )
+        VALUES (
+          ${uid}, ${JSON.stringify(traits || {})}, ${JSON.stringify(values || {})},
+          ${JSON.stringify(scoreVectors)}, ${datingGoals}, ${conversationStyle || null},
+          ${JSON.stringify(dealBreakers || [])}, NOW(), NOW()
+        )
+        RETURNING *
       `;
-
-      // Get both profiles for match details
-      const profiles = await sql`
-        SELECT uid, display_name, photos 
-        FROM profiles 
-        WHERE uid IN (${fromUid}, ${toUid})
-      `;
-
-      match = {
-        ...newMatch[0],
-        profiles: profiles,
-      };
     }
 
     return Response.json({
-      like: newLike[0],
-      match: match,
-      isMatch: !!match,
-      message: match ? "It's a match!" : "Like recorded successfully",
+      quiz: quizResult[0],
+      message: "Quiz results saved successfully",
     });
   } catch (error) {
-    console.error("Like error:", error);
+    console.error("Quiz save error:", error);
     return Response.json({ error: "Internal server error" }, { status: 500 });
   }
 }
